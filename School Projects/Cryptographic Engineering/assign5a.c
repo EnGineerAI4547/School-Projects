@@ -347,6 +347,22 @@ void point_add(point *R, const point *P, const point *Q) {
     
     // Write 1 here
     // slope m
+    mod_sub(m,Q->y,P->y);
+  mod_sub(t,Q->x,P->x);
+  // modular division:
+  mod_inv(t,t);
+  mod_mul(m,m,t);
+  
+
+
+    // xR
+  mod_sqr(xR,m);
+  mod_sub(xR,xR,P->x);
+  mod_sub(xR,xR,Q->x);
+
+  mod_sub(yR,P->x,xR);
+  mod_mul(yR,m,yR);
+  mod_sub(yR,yR,P->y);
 
 
     // xR
@@ -369,12 +385,32 @@ void point_double(point *R, const point *P) {
 
     // Note to access x and y coordinate of P use P->x, P->y
     
-    // Write 2 here
-    // slope m
+  mod_sqr(t,P->x);  // Write 2 here
+  mod_add(m,t,t);  
+  mod_add(m,t,m);
+  mod_add(m,m,a);
+  mod_add(t,P->y,P->y);// slope m
+  mod_inv(t,t);
+  mod_mul(m,m,t);
+
+
+  
+  
 
     // xR
+  mod_sqr(xR,m);
+  mod_add(t,P->x,P->x);
+  mod_sub(xR,xR,t);
+  
 
     // yR
+
+  mod_sub(yR,P->x,xR);
+  mod_mul(yR,yR,m);
+  mod_sub(yR,yR,P->y);
+
+  
+  
 
 
     // R = (xR,yR)
@@ -390,7 +426,24 @@ void select_point(point *R, const point *P, const point *Q, uint8_t option) {
     uint64_t mask;
 
     // Note to access x and y coordinate of P, Q and R use P->x, P->y, Q->x, Q->y, R->x, R->y
+mask=0-option; //gives us 0x0 or 0xffff...ffff
+  
+  for(i=0;i<16;i++)
+  {
+//d=aXORb
+     t=P->x[i]^Q->x[i];
+    t=t&mask;
+    t=t^P->x[i];
+     R->x[i]=t;
+//r=aXORg
 
+ t=P->y[i]^Q->y[i];
+
+    t=t&mask;
+    t=t^P->y[i];
+      
+    R->y[i]=t;
+  }
     // Write 3 here
 
 
@@ -402,6 +455,25 @@ void point_mul(bigint256 xR, const point *P, const bigint256 s) {
     uint8_t bit;
 	point T, T2; // Use &T for pointer. Access coordinates using T.x and T.y
 
+  memcpy(&T,P,sizeof(point));
+
+  j=13;
+  for(i=15;i>=0;i--){
+
+    
+for(;j>=0;j--){
+bit=(s[i]>>j)&1;
+point_double(&T,&T);
+    point_add(&T2,&T,P);
+    select_point(&T,&T,&T2,bit);
+  
+}
+j=15;
+
+    
+  }
+memcpy(xR,T.x,sizeof(bigint256));
+ 
     // Write 4 here
     // Implement using "Double-and-add technique" technique
 
@@ -419,20 +491,60 @@ void recover_y(bigint256 y, const bigint256 x) {
     // Write 5 here
     // Compute s=x^3+ax+b
 
+  mod_sqr(s,x);//x^2
+  mod_mul(s,s,x);//x^3
+  mod_mul(t,a,x);//a*x
+  mod_add(s,s,t);//x^3+ax
+  mod_add(s,s,b);// +b
+  
+  
+  
+
     
-    // Compute u = (2*s)
+    // Compute u = (2*s) mod p
+
+  mod_add(u,s,s);
+  
+  
 
 
     // Compute v = u^((p-5)/8)
     memcpy(v, u, sizeof(bigint256));
+
+  //1.)square and multiply 
+  for(i=0; i<249; i++){
+
+    mod_sqr(v,v);
+    mod_mul(v,v,u);
+    
+
+  }
+
+  //2.) square only
+  mod_sqr(v,v);
+
+  //3.) square and multiply
+  mod_sqr(v,v);
+  mod_mul(v,v,u);
+
+
+  
 
 
 
 
     // Compute w = u*v^2
 
+  mod_sqr(w,v);
+  mod_mul(w,w,u);
+
 
     // Compute y = s*v*(w-1) = s*v*w - s*v
+  mod_mul(t,v,w);
+  mod_mul(t,t,s);
+  mod_mul(s,s,v);
+  mod_sub(y,t,s);
+  
 
 
 }
@@ -454,8 +566,32 @@ void keyGen(bigint256 sk, bigint256 pk) {
     // Generate secret key here (first line is given to you)
     RANDOM_DATA(sk, sizeof(bigint256)); // This will read from the file once and fill sk with random data.
 
+  //1.) generate random 256 bit number
+  //2.) prune number
+  //a. clear bits 0,1,2 and 255 bit
+  sk[15]&=0x7fff;
+    sk[15]|=0x4000;
+  sk[0]&=0xfff8;
+  //b. set bit 254
+  //3.)convert other elements to radix 2^16
+  //4.) generate public key 
     
+for(i=1;i<15;i++){
+sk[i]&=0xffff;
+
+
+  
+}
+// pk = g^sk mod p
+// // r = a^e mod p
+
+
+  
     // Generate public key here
+  point_mul(pk,G.x,sk);
+
+
+  
 
 }
 
@@ -467,10 +603,11 @@ void sharedSecret(bigint256 ss, const bigint256 sk, const bigint256 pk) {
     
     // Write 7 here
     // Regenerate y-coordinate of T here
-
+  recover_y(T.y,T.x);
+  
 
     // Compute shared secret here
-    
+    point_mul(ss,T.x,sk);
 }
 
 int main(int argc, char* argv[]) {
